@@ -1,0 +1,202 @@
+#!/bin/bash
+
+# 고정 설정 경로
+TOOL_DIR="$HOME/bin/netfile-tools"
+LIST_FILE="$TOOL_DIR/target_list.txt"
+LOG_DIR="$TOOL_DIR/log"
+
+# 일자별 로그 파일명 설정 (형식: transfer_년-월-일.log)
+CURRENT_DATE=$(date "+%Y-%m-%d")
+LOG_FILE="$LOG_DIR/transfer_${CURRENT_DATE}.log"
+
+# 로그 폴더 사전 생성 보장
+mkdir -p "$LOG_DIR" 2>/dev/null
+
+clear
+echo "============================================================"
+echo "      🚀 Interactive Remote File Transfer Tool (netsend)"
+echo "============================================================"
+echo "  This tool guides you step-by-step to send files or folders"
+echo "  to another computer on the same network using SSH/rsync."
+echo "============================================================"
+echo ""
+
+# ------------------------------------------------------------
+# STEP 1: 보낼 파일 또는 폴더 경로 입력받기
+# ------------------------------------------------------------
+echo "📌 STEP 1: Enter the path of the file or folder to send."
+echo "   (You can drag and drop the file/folder into this terminal window)"
+read -p "👉 Path: " SRC_PATH
+
+# 드래그 앤 드롭 시 양끝에 붙는 따옴표나 공백 제거 가공
+SRC_PATH=$(echo "$SRC_PATH" | sed -e "s/^'//" -e "s/'$//" -e 's/^"//' -e 's/"$//' -e 's/[[:space:]]*$//')
+
+if [ -z "$SRC_PATH" ]; then
+    echo "❌ Error: Path cannot be empty. Canceling transfer."
+    echo "============================================================"
+    exit 1
+fi
+
+if [ ! -e "$SRC_PATH" ]; then
+    echo "❌ Error: File or folder does not exist at that path."
+    echo "============================================================"
+    exit 1
+fi
+echo "🟢 Valid source path verified."
+echo ""
+
+# ------------------------------------------------------------
+# STEP 2: 주소록을 파싱하여 목적지 선택받기
+# ------------------------------------------------------------
+echo "📌 STEP 2: Select the destination computer from the list."
+if [ ! -f "$LIST_FILE" ]; then
+    echo "❌ Error: Address book file ($LIST_FILE) not found."
+    echo "============================================================"
+    exit 1
+fi
+echo "------------------------------------------------------------"
+
+lines=()
+index=1
+while IFS= read -r line; do
+    [[ "$line" =~ ^[[:space:]]*# ]] && continue
+    [[ -z "$line" ]] && continue
+    
+    raw_name=$(echo "$line" | awk '{print $1}')
+    raw_user=$(echo "$line" | awk '{print $2}')
+    raw_ip=$(echo "$line" | awk '{print $3}')
+    
+    clean_user=${raw_user#User:}
+    clean_ip=${raw_ip#IP:}
+    
+    printf "   [%d] %-8s (User: %-8s / IP: %s)\n" "$index" "$raw_name" "$clean_user" "$clean_ip"
+    
+    lines+=("$raw_name $clean_user $clean_ip")
+    index=$((index + 1))
+done < "$LIST_FILE"
+
+TOTAL_TARGETS=$((index - 1))
+
+if [ "$TOTAL_TARGETS" -eq 0 ]; then
+    echo "⚪️ Notice: No valid hosts found in target_list.txt."
+    echo "============================================================"
+    exit 1
+fi
+
+echo "------------------------------------------------------------"
+read -p "👉 Enter number (1-$TOTAL_TARGETS): " CHOICE
+echo "------------------------------------------------------------"
+
+if ! [[ "$CHOICE" =~ ^[0-9]+$ ]] || [ "$CHOICE" -lt 1 ] || [ "$CHOICE" -gt "$TOTAL_TARGETS" ]; then
+    echo "❌ Error: Invalid selection number. Canceling transfer."
+    echo "============================================================"
+    exit 1
+fi
+
+SELECTED_DATA="${lines[$((CHOICE - 1))]}"
+TARGET_NAME=$(echo "$SELECTED_DATA" | awk '{print $1}')
+TARGET_USER=$(echo "$SELECTED_DATA" | awk '{print $2}')
+TARGET_IP=$(echo "$SELECTED_DATA" | awk '{print $3}')
+echo "🟢 Target selected: $TARGET_NAME"
+echo ""
+
+# ------------------------------------------------------------
+# STEP 3: 목적지 저장 위치(디렉토리 경로) 입력받기
+# ------------------------------------------------------------
+echo "📌 STEP 3: Enter the destination folder path on the remote machine."
+echo "   (Press [Enter] to use default fallback: ~/Downloads/)"
+read -p "👉 Remote Path: " DEST_PATH
+
+if [ -z "$DEST_PATH" ]; then
+    DEST_PATH="~/Downloads/"
+fi
+echo "🟢 Target path set to: $DEST_PATH"
+echo ""
+
+# ------------------------------------------------------------
+# START TRANSFER: 실제 절대 경로 및 파일명 실시간 역추적
+# ------------------------------------------------------------
+if [ "$SRC_PATH" == "." ] || [ "$SRC_PATH" == "./" ]; then
+    ABS_SRC_ROOT=$(pwd)
+else
+    if [[ "$SRC_PATH" = /* ]]; then
+        ABS_SRC_ROOT="$SRC_PATH"
+    else
+        ABS_SRC_ROOT="$(cd "$(dirname "$SRC_PATH")" 2>/dev/null && pwd)/$(basename "$SRC_PATH")"
+    fi
+fi
+
+START_TIME=$(date +%s)
+
+echo "🔍 Checking connection to [$TARGET_NAME] ($TARGET_IP)..."
+if ! ping -c 1 -W 2 "$TARGET_IP" &>/dev/null; then
+    echo "❌ Error: Cannot communicate with $TARGET_NAME. Host is offline."
+    END_TIME=$(date +%s)
+    ELAPSED=$((END_TIME - START_TIME))
+    
+    echo "[$(date '+%H:%M:%S')] [FAIL] File: $ABS_SRC_ROOT" >> "$LOG_FILE"
+    echo "           └─ To: $TARGET_NAME($TARGET_IP) -> '$DEST_PATH' | Time: ${ELAPSED}s (Offline)" >> "$LOG_FILE"
+    echo "============================================================"
+    exit 1
+fi
+
+echo "🟢 Online! Initializing secure file transfer..."
+echo "💡 Remote account password might be requested below."
+echo "------------------------------------------------------------"
+
+# rsync 실행 파트 (진행률을 화면에 온전히 뿌려줍니다)
+if [ -d "$SRC_PATH" ]; then
+    rsync -avzh --progress "${SRC_PATH%/}" "${TARGET_USER}@${TARGET_IP}:${DEST_PATH}"
+else
+    rsync -avzh --progress "$SRC_PATH" "${TARGET_USER}@${TARGET_IP}:${DEST_PATH}"
+fi
+RSYNC_STATUS=$?
+
+# 종료 시간 및 경과 시간 연산
+END_TIME=$(date +%s)
+ELAPSED_SECONDS=$((END_TIME - START_TIME))
+
+FORMATTED_TIME=""
+if [ $ELAPSED_SECONDS -ge 3600 ]; then
+    FORMATTED_TIME="$((ELAPSED_SECONDS / 3600))h $(((ELAPSED_SECONDS % 3600) / 60))m $((ELAPSED_SECONDS % 60))s"
+elif [ $ELAPSED_SECONDS -ge 60 ]; then
+    FORMATTED_TIME="$((ELAPSED_SECONDS / 60))m $((ELAPSED_SECONDS % 60))s"
+else
+    FORMATTED_TIME="${ELAPSED_SECONDS}s"
+fi
+
+# ------------------------------------------------------------
+# LOGGING LOGIC: 시스템 find 엔진 기반 무결점 개별 파일 추적
+# ------------------------------------------------------------
+if [ $RSYNC_STATUS -eq 0 ]; then
+    echo "------------------------------------------------------------"
+    echo "✨ Success! Transfer completed successfully. (Time: $FORMATTED_TIME)"
+    echo "💾 Saved Location: $TARGET_USER@$TARGET_IP:$DEST_PATH"
+    
+    # 보낸 대상이 폴더일 경우 내부에 속한 모든 파일들의 실제 리스트를 전수 수집합니다.
+    if [ -d "$ABS_SRC_ROOT" ]; then
+        # 폴더 아래에 있는 순수 파일과 하위 디렉토리 파일 목록 전체를 추적 (디렉토리 자체 명칭은 제외)
+        TRANSFER_FILES=$(find "$ABS_SRC_ROOT" -type f 2>/dev/null)
+    else
+        # 단일 파일인 경우 타겟 자체를 지정
+        TRANSFER_FILES="$ABS_SRC_ROOT"
+    fi
+
+    # 시스템이 직접 긁어온 진짜 개별 파일 주소를 2줄씩 고정 적재
+    echo "$TRANSFER_FILES" | while read -r single_file; do
+        [ -z "$single_file" ] && continue
+        
+        # 파일당 정확히 깔끔한 2줄 세트로 분할 적재 완료 (중복 경로 현상 원천 차단)
+        echo "[$(date '+%H:%M:%S')] [SUCCESS] File: $single_file" >> "$LOG_FILE"
+        echo "           └─ To: $TARGET_NAME($TARGET_IP) -> '$DEST_PATH' | Time: $FORMATTED_TIME" >> "$LOG_FILE"
+    done
+else
+    echo "------------------------------------------------------------"
+    echo "❌ Transfer Failed: SSH connection closed or auth error."
+    echo "💡 Tip: Make sure 'Remote Login' is enabled on the target machine."
+    
+    echo "[$(date '+%H:%M:%S')] [FAIL] File: $ABS_SRC_ROOT" >> "$LOG_FILE"
+    echo "           └─ To: $TARGET_NAME($TARGET_IP) -> '$DEST_PATH' | Time: $FORMATTED_TIME (SSH Error)" >> "$LOG_FILE"
+fi
+
+echo "============================================================"

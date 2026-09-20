@@ -1,0 +1,5 @@
+# [Target_Name] [Remote_Username] [Destination_IP]
+# Auto-generated on 2026-09-20 20:01:17
+Host1 User:merong IP:192.168.55.49
+Host2 User:airjin IP:192.168.55.100
+Host3 User:prox   IP:192.168.55.156
