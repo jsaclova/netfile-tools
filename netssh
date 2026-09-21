@@ -1,4 +1,10 @@
 #!/bin/bash
+# ===============================================
+# Name: netssh
+# Author: Jin (jsaclova@gmail.com)
+# Date: 2026-09-21
+# Description: Interactive SSH Remote Login Tool via Target Address Book
+# ===============================================
 
 # 절대 경로 다이렉트 고정 매핑
 LIST_FILE="$HOME/bin/netfile-tools/target_list.txt"
@@ -25,23 +31,18 @@ echo "------------------------------------------------------------"
 lines=()
 index=1
 while IFS= read -r line; do
-    # 주석 및 빈 줄 건너뛰기
     [[ "$line" =~ ^[[:space:]]*# ]] && continue
     [[ -z "$line" ]] && continue
     
-    # 컬럼 파싱
     raw_name=$(echo "$line" | awk '{print $1}')
     raw_user=$(echo "$line" | awk '{print $2}')
     raw_ip=$(echo "$line" | awk '{print $3}')
     
-    # 'User:' 및 'IP:' 태그 제거 가공
     clean_user=${raw_user#User:}
     clean_ip=${raw_ip#IP:}
     
-    # 메뉴 출력
     printf "   [%d] %-8s (User: %-8s / IP: %s)\n" "$index" "$raw_name" "$clean_user" "$clean_ip"
     
-    # 배열에 정제된 데이터 임시 저장
     lines+=("$raw_name $clean_user $clean_ip")
     index=$((index + 1))
 done < "$LIST_FILE"
