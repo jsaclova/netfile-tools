@@ -1,4 +1,10 @@
 #!/bin/bash
+# ===============================================
+# Name: netsend
+# Author: Jin (jsaclova@gmail.com)
+# Date: 2026-09-21
+# Description: Interactive Remote File/Folder Transfer Tool (rsync-based)
+# ===============================================
 
 # 고정 설정 경로
 TOOL_DIR="$HOME/bin/netfile-tools"
@@ -21,9 +27,7 @@ echo "  to another computer on the same network using SSH/rsync."
 echo "============================================================"
 echo ""
 
-# ------------------------------------------------------------
 # STEP 1: 보낼 파일 또는 폴더 경로 입력받기
-# ------------------------------------------------------------
 echo "📌 STEP 1: Enter the path of the file or folder to send."
 echo "   (You can drag and drop the file/folder into this terminal window)"
 read -p "👉 Path: " SRC_PATH
@@ -45,9 +49,7 @@ fi
 echo "🟢 Valid source path verified."
 echo ""
 
-# ------------------------------------------------------------
 # STEP 2: 주소록을 파싱하여 목적지 선택받기
-# ------------------------------------------------------------
 echo "📌 STEP 2: Select the destination computer from the list."
 if [ ! -f "$LIST_FILE" ]; then
     echo "❌ Error: Address book file ($LIST_FILE) not found."
@@ -100,9 +102,7 @@ TARGET_IP=$(echo "$SELECTED_DATA" | awk '{print $3}')
 echo "🟢 Target selected: $TARGET_NAME"
 echo ""
 
-# ------------------------------------------------------------
 # STEP 3: 목적지 저장 위치(디렉토리 경로) 입력받기
-# ------------------------------------------------------------
 echo "📌 STEP 3: Enter the destination folder path on the remote machine."
 echo "   (Press [Enter] to use default fallback: ~/Downloads/)"
 read -p "👉 Remote Path: " DEST_PATH
@@ -113,9 +113,7 @@ fi
 echo "🟢 Target path set to: $DEST_PATH"
 echo ""
 
-# ------------------------------------------------------------
 # START TRANSFER: 실제 절대 경로 및 파일명 실시간 역추적
-# ------------------------------------------------------------
 if [ "$SRC_PATH" == "." ] || [ "$SRC_PATH" == "./" ]; then
     ABS_SRC_ROOT=$(pwd)
 else
@@ -134,7 +132,7 @@ if ! ping -c 1 -W 2 "$TARGET_IP" &>/dev/null; then
     END_TIME=$(date +%s)
     ELAPSED=$((END_TIME - START_TIME))
     
-    echo "[$(date '+%H:%M:%S')] [FAIL] File: $ABS_SRC_ROOT" >> "$LOG_FILE"
+    echo "[$(date '+%H:%M:%S')] [SEND_FAIL] File: $ABS_SRC_ROOT" >> "$LOG_FILE"
     echo "           └─ To: $TARGET_NAME($TARGET_IP) -> '$DEST_PATH' | Time: ${ELAPSED}s (Offline)" >> "$LOG_FILE"
     echo "============================================================"
     exit 1
@@ -165,29 +163,23 @@ else
     FORMATTED_TIME="${ELAPSED_SECONDS}s"
 fi
 
-# ------------------------------------------------------------
 # LOGGING LOGIC: 시스템 find 엔진 기반 무결점 개별 파일 추적
-# ------------------------------------------------------------
 if [ $RSYNC_STATUS -eq 0 ]; then
     echo "------------------------------------------------------------"
     echo "✨ Success! Transfer completed successfully. (Time: $FORMATTED_TIME)"
     echo "💾 Saved Location: $TARGET_USER@$TARGET_IP:$DEST_PATH"
     
-    # 보낸 대상이 폴더일 경우 내부에 속한 모든 파일들의 실제 리스트를 전수 수집합니다.
     if [ -d "$ABS_SRC_ROOT" ]; then
-        # 폴더 아래에 있는 순수 파일과 하위 디렉토리 파일 목록 전체를 추적 (디렉토리 자체 명칭은 제외)
         TRANSFER_FILES=$(find "$ABS_SRC_ROOT" -type f 2>/dev/null)
     else
-        # 단일 파일인 경우 타겟 자체를 지정
         TRANSFER_FILES="$ABS_SRC_ROOT"
     fi
 
-    # 시스템이 직접 긁어온 진짜 개별 파일 주소를 2줄씩 고정 적재
     echo "$TRANSFER_FILES" | while read -r single_file; do
         [ -z "$single_file" ] && continue
-        
-        # 파일당 정확히 깔끔한 2줄 세트로 분할 적재 완료 (중복 경로 현상 원천 차단)
-        echo "[$(date '+%H:%M:%S')] [SUCCESS] File: $single_file" >> "$LOG_FILE"
+        single_file=$(echo "$single_file" | sed 's/\/\/*/\//g')
+
+        echo "[$(date '+%H:%M:%S')] [SEND_SUCCESS] File: $single_file" >> "$LOG_FILE"
         echo "           └─ To: $TARGET_NAME($TARGET_IP) -> '$DEST_PATH' | Time: $FORMATTED_TIME" >> "$LOG_FILE"
     done
 else
@@ -195,7 +187,7 @@ else
     echo "❌ Transfer Failed: SSH connection closed or auth error."
     echo "💡 Tip: Make sure 'Remote Login' is enabled on the target machine."
     
-    echo "[$(date '+%H:%M:%S')] [FAIL] File: $ABS_SRC_ROOT" >> "$LOG_FILE"
+    echo "[$(date '+%H:%M:%S')] [SEND_FAIL] File: $ABS_SRC_ROOT" >> "$LOG_FILE"
     echo "           └─ To: $TARGET_NAME($TARGET_IP) -> '$DEST_PATH' | Time: $FORMATTED_TIME (SSH Error)" >> "$LOG_FILE"
 fi
 
