@@ -3,7 +3,7 @@
 # Name: netsend
 # Author: Jin (jsaclova@gmail.com)
 # Date: 2026-09-21
-# Description: Interactive Remote File/Folder Transfer Tool (rsync-based)
+# Description: Interactive Remote File/Folder Transfer Tool with Strict 3-Pass Limit
 # ===============================================
 
 # 고정 설정 경로
@@ -115,7 +115,7 @@ fi
 echo "🟢 Target path set to: $DEST_PATH"
 echo ""
 
-# START TRANSFER: 실제 절대 경로 및 파일명 실시간 역추적
+# START TRANSFER
 if [ "$SRC_PATH" == "." ] || [ "$SRC_PATH" == "./" ]; then
     ABS_SRC_ROOT=$(pwd)
 else
@@ -141,14 +141,16 @@ if ! ping -c 1 -W 2 "$TARGET_IP" &>/dev/null; then
 fi
 
 echo "🟢 Online! Initializing secure file transfer..."
-echo "💡 Remote account password might be requested below."
+echo " 🔒 Strict Security Active: Auto-close session after 3 password failures."
 echo "------------------------------------------------------------"
 
-# rsync 실행 파트 (진행률을 화면에 온전히 뿌려줍니다)
+# [핵심 보안 연동] rsync 전송 명령어에 무결점 3회 패스워드 강제 강제 차단 옵션을 투입합니다.
+SSH_OPTS="ssh -o NumberOfPasswordPrompts=3 -o KbdInteractiveAuthentication=no -o PreferredAuthentications=password"
+
 if [ -d "$SRC_PATH" ]; then
-    rsync -avzh --progress "${SRC_PATH%/}" "${TARGET_USER}@${TARGET_IP}:${DEST_PATH}"
+    rsync -avzh --progress -e "$SSH_OPTS" "${SRC_PATH%/}" "${TARGET_USER}@${TARGET_IP}:${DEST_PATH}"
 else
-    rsync -avzh --progress "$SRC_PATH" "${TARGET_USER}@${TARGET_IP}:${DEST_PATH}"
+    rsync -avzh --progress -e "$SSH_OPTS" "$SRC_PATH" "${TARGET_USER}@${TARGET_IP}:${DEST_PATH}"
 fi
 RSYNC_STATUS=$?
 
@@ -165,7 +167,7 @@ else
     FORMATTED_TIME="${ELAPSED_SECONDS}s"
 fi
 
-# LOGGING LOGIC: 시스템 find 엔진 기반 무결점 개별 파일 추적
+# LOGGING LOGIC
 if [ $RSYNC_STATUS -eq 0 ]; then
     echo "------------------------------------------------------------"
     echo "✨ Success! Transfer completed successfully. (Time: $FORMATTED_TIME)"
