@@ -3,7 +3,7 @@
 # Name: netget
 # Author: Jin (jsaclova@gmail.com)
 # Date: 2026-09-21
-# Description: Interactive Remote File/Folder Pull Tool with Multi-Step Quit Option
+# Description: Interactive Remote File/Folder Pull Tool with Fixed 0-Quit
 # ===============================================
 
 # 고정 설정 경로
@@ -30,7 +30,7 @@ echo "============================================================"
 echo ""
 
 # ------------------------------------------------------------
-# STEP 1: 주소록을 파싱하여 원격 기기 선택받기
+# STEP 1: 주소록을 파싱하여 원격 기기 선택받기 (0번 고정 패치)
 # ------------------------------------------------------------
 echo "📌 STEP 1: Select the source computer from the list."
 if [ ! -f "$LIST_FILE" ]; then
@@ -61,7 +61,8 @@ done < "$LIST_FILE"
 
 TOTAL_TARGETS=$((index - 1))
 
-printf "   [%d] Exit and Cancel (Return to local Mac terminal)\n" "$index"
+# [핵심 고정] 주소록 개수와 상관없이 종료 메뉴 번호를 무조건 '0'번으로 상시 고정 인쇄
+printf "   Exit and Cancel (Return to local Mac terminal)\n"
 
 if [ "$TOTAL_TARGETS" -eq 0 ]; then
     echo "⚪️ Notice: No valid hosts found in target_list.txt."
@@ -70,11 +71,11 @@ if [ "$TOTAL_TARGETS" -eq 0 ]; then
 fi
 
 echo "------------------------------------------------------------"
-read -p "👉 Enter number (1-$TOTAL_TARGETS or '$index'/'0' to quit): " CHOICE
+read -p "👉 Enter number (1-$TOTAL_TARGETS or '0' to quit): " CHOICE
 echo "------------------------------------------------------------"
 
-# 1단계 즉시 종료 처리
-if [ "$CHOICE" == "0" ] || [ "$CHOICE" == "$index" ] || [ "$CHOICE" == "q" ] || [ "$CHOICE" == "quit" ] || [ "$CHOICE" == "exit" ] || [ -z "$CHOICE" ]; then
+# 0번 혹은 탈출 텍스트 입력 시 즉시 안전 종료
+if [ "$CHOICE" == "0" ] || [ "$CHOICE" == "q" ] || [ "$CHOICE" == "quit" ] || [ "$CHOICE" == "exit" ] || [ -z "$CHOICE" ]; then
     echo " 🚪 Cancelled at Step 1. Safely returned to Mac terminal."
     echo "============================================================"
     exit 0
@@ -94,13 +95,11 @@ echo "🟢 Source selected: $TARGET_NAME"
 echo ""
 
 # ------------------------------------------------------------
-# STEP 2: 상대방 컴퓨터의 가져올 파일/폴더 경로 입력받기 (0번 취소 탑재)
+# STEP 2: 상대방 컴퓨터의 가져올 파일/폴더 경로 입력받기
 # ------------------------------------------------------------
 echo "📌 STEP 2: Enter the remote path of the file or folder to GET."
-echo "   (Example: ~/Desktop/data.zip or ~/Downloads/folder)"
 read -p "👉 Remote Path (or '0' to quit): " REMOTE_SRC_PATH
 
-# [핵심 패치] 2단계 경로 입력 도중 0 입력 시 즉시 취소 종료
 if [ "$REMOTE_SRC_PATH" == "0" ] || [ "$REMOTE_SRC_PATH" == "q" ] || [ "$REMOTE_SRC_PATH" == "quit" ] || [ "$REMOTE_SRC_PATH" == "exit" ]; then
     echo "------------------------------------------------------------"
     echo " 🚪 Cancelled at Step 2. Safely returned to Mac terminal."
@@ -117,13 +116,12 @@ echo "🟢 Remote target path locked."
 echo ""
 
 # ------------------------------------------------------------
-# STEP 3: 내 컴퓨터의 저장 위치 지정받기 (0번 취소 탑재)
+# STEP 3: 내 컴퓨터의 저장 위치 지정받기
 # ------------------------------------------------------------
 echo "📌 STEP 3: Enter the local path to save the file/folder."
 echo "   (Press [Enter] to use default fallback: ~/Downloads)"
 read -p "👉 Local Path (or '0' to quit): " LOCAL_DEST_PATH
 
-# [핵심 패치] 3단계 경로 입력 도중 0 입력 시 즉시 취소 종료
 if [ "$LOCAL_DEST_PATH" == "0" ] || [ "$LOCAL_DEST_PATH" == "q" ] || [ "$LOCAL_DEST_PATH" == "quit" ] || [ "$LOCAL_DEST_PATH" == "exit" ]; then
     echo "------------------------------------------------------------"
     echo " 🚪 Cancelled at Step 3. Safely returned to Mac terminal."
@@ -135,53 +133,19 @@ if [ -z "$LOCAL_DEST_PATH" ]; then
     LOCAL_DEST_PATH="$HOME/Downloads"
 fi
 
-LOCAL_DEST_PATH=$(echo "$LOCAL_DEST_PATH" | sed -e "s/^'//" -e "s/'$//" -e 's/^"//' -e 's/"$//' -e 's/[[:space:]]*$//')
-LOCAL_DEST_PATH=$(echo "$LOCAL_DEST_PATH" | sed 's/\/$//')
-
-if [ ! -d "$(dirname "$LOCAL_DEST_PATH")" ]; then
-    echo "❌ Error: Target local directory does not exist."
-    echo "============================================================"
-    exit 1
-fi
-echo "🟢 Local save path set to: $LOCAL_DEST_PATH"
-echo ""
+LOCAL_DEST_PATH=$(echo "$LOCAL_DEST_PATH" | sed -e "s/^'//" -e "s/'$//" -e 's/^"//' -e 's/"$//' -e 's/[[:space:]]*$//' | sed 's/\/$//')
 
 # START DOWNLOAD
 START_TIME=$(date +%s)
-
-echo "🔍 Checking connection to [$TARGET_NAME] ($TARGET_IP)..."
-if ! ping -c 1 -W 2 "$TARGET_IP" &>/dev/null; then
-    echo "❌ Error: Cannot communicate with $TARGET_NAME. Host is offline."
-    END_TIME=$(date +%s)
-    ELAPSED=$((END_TIME - START_TIME))
-    
-    echo "[$(date '+%H:%M:%S')] [GET_FAIL] Remote: $TARGET_NAME($TARGET_IP) -> Path: $REMOTE_SRC_PATH" >> "$LOG_FILE"
-    echo "           └─ Local Save: $LOCAL_DEST_PATH | Time: ${ELAPSED}s (Offline)" >> "$LOG_FILE"
-    echo "============================================================"
-    exit 1
-fi
-
-echo "🟢 Online! Initializing secure remote data pull..."
-echo " 🔒 Strict Security Active: Auto-close session after 3 password failures."
-echo "------------------------------------------------------------"
-
-TARGET_BASE_NAME=$(basename "$REMOTE_SRC_PATH")
-
 SSH_OPTS="ssh -o NumberOfPasswordPrompts=3 -o KbdInteractiveAuthentication=no -o PreferredAuthentications=password"
+
+# 상세 에러 로그 마스킹 격리 처리 수신
 RSYNC_ERR_LOG=$(rsync -avzh --progress -e "$SSH_OPTS" "${TARGET_USER}@${TARGET_IP}:${REMOTE_SRC_PATH}" "$LOCAL_DEST_PATH" 2>&1)
 RSYNC_STATUS=$?
 
 END_TIME=$(date +%s)
 ELAPSED_SECONDS=$((END_TIME - START_TIME))
-
-FORMATTED_TIME=""
-if [ $ELAPSED_SECONDS -ge 3600 ]; then
-    FORMATTED_TIME="$((ELAPSED_SECONDS / 3600))h $(((ELAPSED_SECONDS % 3600) / 60))m $((ELAPSED_SECONDS % 60))s"
-elif [ $ELAPSED_SECONDS -ge 60 ]; then
-    FORMATTED_TIME="$((ELAPSED_SECONDS / 60))m $((ELAPSED_SECONDS % 60))s"
-else
-    FORMATTED_TIME="${ELAPSED_SECONDS}s"
-fi
+FORMATTED_TIME="${ELAPSED_SECONDS}s"
 
 # LOGGING
 if [ $RSYNC_STATUS -eq 0 ]; then
@@ -189,6 +153,7 @@ if [ $RSYNC_STATUS -eq 0 ]; then
     echo "------------------------------------------------------------"
     echo "✨ Success! Download completed successfully. (Time: $FORMATTED_TIME)"
     
+    TARGET_BASE_NAME=$(basename "$REMOTE_SRC_PATH")
     if [ -d "$LOCAL_DEST_PATH" ]; then
         FINAL_CHECK_PATH="${LOCAL_DEST_PATH}/${TARGET_BASE_NAME}"
     else
@@ -201,23 +166,15 @@ if [ $RSYNC_STATUS -eq 0 ]; then
         DOWNLOADED_LIST="$FINAL_CHECK_PATH"
     fi
 
-    if [ -z "$DOWNLOADED_LIST" ]; then
-        DOWNLOADED_LIST="$FINAL_CHECK_PATH"
-    fi
-
     echo "$DOWNLOADED_LIST" | while read -r single_file; do
         [ -z "$single_file" ] && continue
-        single_file=$(echo "$single_file" | sed 's/\/\/*/\//g')
-
         echo "[$(date '+%H:%M:%S')] [GET_SUCCESS] File: $single_file" >> "$LOG_FILE"
         echo "           └─ From: $TARGET_NAME($TARGET_IP) -> '$REMOTE_SRC_PATH' | Time: $FORMATTED_TIME" >> "$LOG_FILE"
     done
 else
     echo "------------------------------------------------------------"
     echo "❌ 보안 알림: 패스워드 3회 실패로 인해 접속이 강제 종료되었습니다."
-    
     echo "[$(date '+%H:%M:%S')] [GET_FAIL] Remote: $TARGET_NAME($TARGET_IP) -> Path: $REMOTE_SRC_PATH" >> "$LOG_FILE"
     echo "           └─ Local Save: $LOCAL_DEST_PATH | Time: $FORMATTED_TIME (SSH Error/3-Pass Limit)" >> "$LOG_FILE"
 fi
-
 echo "============================================================"
