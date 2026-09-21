@@ -34,7 +34,6 @@ echo "📌 STEP 1: Enter the path of the file or folder to send."
 echo "   (You can drag and drop the file/folder into this terminal window)"
 read -p "👉 Path: " SRC_PATH
 
-# 드래그 앤 드롭 시 양끝에 붙는 따옴표나 공백 제거 가공
 SRC_PATH=$(echo "$SRC_PATH" | sed -e "s/^'//" -e "s/'$//" -e 's/^"//' -e 's/"$//' -e 's/[[:space:]]*$//')
 
 if [ -z "$SRC_PATH" ]; then
@@ -104,7 +103,7 @@ TARGET_IP=$(echo "$SELECTED_DATA" | awk '{print $3}')
 echo "🟢 Target selected: $TARGET_NAME"
 echo ""
 
-# STEP 3: 목적지 저장 위치(디렉토리 경로) 입력받기
+# STEP 3: 목적지 저장 위치 입력받기
 echo "📌 STEP 3: Enter the destination folder path on the remote machine."
 echo "   (Press [Enter] to use default fallback: ~/Downloads/)"
 read -p "👉 Remote Path: " DEST_PATH
@@ -144,17 +143,16 @@ echo "🟢 Online! Initializing secure file transfer..."
 echo " 🔒 Strict Security Active: Auto-close session after 3 password failures."
 echo "------------------------------------------------------------"
 
-# [핵심 보안 연동] rsync 전송 명령어에 무결점 3회 패스워드 강제 강제 차단 옵션을 투입합니다.
 SSH_OPTS="ssh -o NumberOfPasswordPrompts=3 -o KbdInteractiveAuthentication=no -o PreferredAuthentications=password"
 
+# [핵심 리팩토링] 2>&1로 출력되는 rsync 에러 로그 찌꺼기를 임시 변수에 격리 담아 터미널 인쇄를 완전 통제합니다.
 if [ -d "$SRC_PATH" ]; then
-    rsync -avzh --progress -e "$SSH_OPTS" "${SRC_PATH%/}" "${TARGET_USER}@${TARGET_IP}:${DEST_PATH}"
+    RSYNC_ERR_LOG=$(rsync -avzh --progress -e "$SSH_OPTS" "${SRC_PATH%/}" "${TARGET_USER}@${TARGET_IP}:${DEST_PATH}" 2>&1)
 else
-    rsync -avzh --progress -e "$SSH_OPTS" "$SRC_PATH" "${TARGET_USER}@${TARGET_IP}:${DEST_PATH}"
+    RSYNC_ERR_LOG=$(rsync -avzh --progress -e "$SSH_OPTS" "$SRC_PATH" "${TARGET_USER}@${TARGET_IP}:${DEST_PATH}" 2>&1)
 fi
 RSYNC_STATUS=$?
 
-# 종료 시간 및 경과 시간 연산
 END_TIME=$(date +%s)
 ELAPSED_SECONDS=$((END_TIME - START_TIME))
 
@@ -167,8 +165,10 @@ else
     FORMATTED_TIME="${ELAPSED_SECONDS}s"
 fi
 
-# LOGGING LOGIC
+# LOGGING 및 결과 화면 제어
 if [ $RSYNC_STATUS -eq 0 ]; then
+    # 성공 시 격리했던 전송 진행률 목록을 화면에 정상 표출
+    echo "$RSYNC_ERR_LOG"
     echo "------------------------------------------------------------"
     echo "✨ Success! Transfer completed successfully. (Time: $FORMATTED_TIME)"
     echo "💾 Saved Location: $TARGET_USER@$TARGET_IP:$DEST_PATH"
@@ -188,11 +188,11 @@ if [ $RSYNC_STATUS -eq 0 ]; then
     done
 else
     echo "------------------------------------------------------------"
-    echo "❌ Transfer Failed: SSH connection closed or auth error."
-    echo "💡 Tip: Make sure 'Remote Login' is enabled on the target machine."
+    # [핵심 패치] 지저분한 에러 구문을 파괴하고 사용자가 요청한 깔끔한 안내 문구만 매핑 출력
+    echo "❌ 보안 알림: 패스워드 3회 실패로 인해 접속이 강제 종료되었습니다."
     
     echo "[$(date '+%H:%M:%S')] [SEND_FAIL] File: $ABS_SRC_ROOT" >> "$LOG_FILE"
-    echo "           └─ To: $TARGET_NAME($TARGET_IP) -> '$DEST_PATH' | Time: $FORMATTED_TIME (SSH Error)" >> "$LOG_FILE"
+    echo "           └─ To: $TARGET_NAME($TARGET_IP) -> '$DEST_PATH' | Time: $FORMATTED_TIME (SSH Error/3-Pass Limit)" >> "$LOG_FILE"
 fi
 
 echo "============================================================"
