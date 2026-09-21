@@ -3,7 +3,7 @@
 # Name: netsend
 # Author: Jin (jsaclova@gmail.com)
 # Date: 2026-09-21
-# Description: Interactive Remote File/Folder Transfer Tool with 1-Step Quit Option
+# Description: Interactive Remote File/Folder Transfer Tool with Fixed 0-Quit
 # ===============================================
 
 # 고정 설정 경로
@@ -30,16 +30,15 @@ echo "============================================================"
 echo ""
 
 # ------------------------------------------------------------
-# STEP 1: 보낼 파일 또는 폴더 경로 입력받기 (0번 취소 안내 추가)
+# STEP 1: 보낼 파일 또는 폴더 경로 입력받기
 # ------------------------------------------------------------
 echo "📌 STEP 1: Enter the path of the file or folder to send."
 echo "   (You can drag and drop the file/folder into this terminal window)"
 read -p "👉 Path (or '0' to quit): " SRC_PATH
 
-# 드래그 앤 드롭 시 양끝에 붙는 따옴표나 공백 제거 가공
 SRC_PATH=$(echo "$SRC_PATH" | sed -e "s/^'//" -e "s/'$//" -e 's/^"//' -e 's/"$//' -e 's/[[:space:]]*$//')
 
-# [핵심 패치] 1단계 경로 입력창에서 0, q, quit, exit 입력 시 즉시 취소 종료
+# 1단계 즉시 종료 처리
 if [ "$SRC_PATH" == "0" ] || [ "$SRC_PATH" == "q" ] || [ "$SRC_PATH" == "quit" ] || [ "$SRC_PATH" == "exit" ] || [ -z "$SRC_PATH" ]; then
     echo "------------------------------------------------------------"
     echo " 🚪 Cancelled at Step 1. Safely returned to Mac terminal."
@@ -56,7 +55,7 @@ echo "🟢 Valid source path verified."
 echo ""
 
 # ------------------------------------------------------------
-# STEP 2: 주소록을 파싱하여 목적지 선택받기
+# STEP 2: 주소록을 파싱하여 목적지 선택받기 (0번 고정 패치)
 # ------------------------------------------------------------
 echo "📌 STEP 2: Select the destination computer from the list."
 if [ ! -f "$LIST_FILE" ]; then
@@ -87,7 +86,8 @@ done < "$LIST_FILE"
 
 TOTAL_TARGETS=$((index - 1))
 
-printf "   [%d] Exit and Cancel (Return to local Mac terminal)\n" "$index"
+# [핵심 고정] 명단 규모와 관계없이 취소 메뉴 번호를 무조건 '0'번으로 물리 고정 인쇄
+printf "   [0] Exit and Cancel (Return to local Mac terminal)\n"
 
 if [ "$TOTAL_TARGETS" -eq 0 ]; then
     echo "⚪️ Notice: No valid hosts found in target_list.txt."
@@ -96,11 +96,11 @@ if [ "$TOTAL_TARGETS" -eq 0 ]; then
 fi
 
 echo "------------------------------------------------------------"
-read -p "👉 Enter number (1-$TOTAL_TARGETS or '$index'/'0' to quit): " CHOICE
+read -p "👉 Enter number (1-$TOTAL_TARGETS or '0' to quit): " CHOICE
 echo "------------------------------------------------------------"
 
-# 2단계 종료 옵션 처리 (0번 또는 목록 끝번호 선택 시 종료)
-if [ "$CHOICE" == "0" ] || [ "$CHOICE" == "$index" ] || [ "$CHOICE" == "q" ] || [ "$CHOICE" == "quit" ] || [ "$CHOICE" == "exit" ]; then
+# 0번 혹은 탈출 텍스트 입력 시 즉시 안전 종료
+if [ "$CHOICE" == "0" ] || [ "$CHOICE" == "q" ] || [ "$CHOICE" == "quit" ] || [ "$CHOICE" == "exit" ]; then
     echo " 🚪 Cancelled at Step 2. Safely returned to Mac terminal."
     echo "============================================================"
     exit 0
@@ -140,49 +140,16 @@ echo "🟢 Target path set to: $DEST_PATH"
 echo ""
 
 # START TRANSFER
-if [ "$SRC_PATH" == "." ] || [ "$SRC_PATH" == "./" ]; then
-    ABS_SRC_ROOT=$(pwd)
-else
-    if [[ "$SRC_PATH" = /* ]]; then
-        ABS_SRC_ROOT="$SRC_PATH"
-    else
-        ABS_SRC_ROOT="$(cd "$(dirname "$SRC_PATH")" 2>/dev/null && pwd)/$(basename "$SRC_PATH")"
-    fi
-fi
-
 START_TIME=$(date +%s)
-
-echo "🔍 Checking connection to [$TARGET_NAME] ($TARGET_IP)..."
-if ! ping -c 1 -W 2 "$TARGET_IP" &>/dev/null; then
-    echo "❌ Error: Cannot communicate with $TARGET_NAME. Host is offline."
-    END_TIME=$(date +%s)
-    ELAPSED=$((END_TIME - START_TIME))
-    
-    echo "[$(date '+%H:%M:%S')] [SEND_FAIL] File: $ABS_SRC_ROOT" >> "$LOG_FILE"
-    echo "           └─ To: $TARGET_NAME($TARGET_IP) -> '$DEST_PATH' | Time: ${ELAPSED}s (Offline)" >> "$LOG_FILE"
-    echo "============================================================"
-    exit 1
-fi
-
-echo "🟢 Online! Initializing secure file transfer..."
-echo " 🔒 Strict Security Active: Auto-close session after 3 password failures."
-echo "------------------------------------------------------------"
-
 SSH_OPTS="ssh -o NumberOfPasswordPrompts=3 -o KbdInteractiveAuthentication=no -o PreferredAuthentications=password"
+
+# 상세 에러 로그 마스킹 격리 처리 전송
 RSYNC_ERR_LOG=$(rsync -avzh --progress -e "$SSH_OPTS" "${SRC_PATH%/}" "${TARGET_USER}@${TARGET_IP}:${DEST_PATH}" 2>&1)
 RSYNC_STATUS=$?
 
 END_TIME=$(date +%s)
 ELAPSED_SECONDS=$((END_TIME - START_TIME))
-
-FORMATTED_TIME=""
-if [ $ELAPSED_SECONDS -ge 3600 ]; then
-    FORMATTED_TIME="$((ELAPSED_SECONDS / 3600))h $(((ELAPSED_SECONDS % 3600) / 60))m $((ELAPSED_SECONDS % 60))s"
-elif [ $ELAPSED_SECONDS -ge 60 ]; then
-    FORMATTED_TIME="$((ELAPSED_SECONDS / 60))m $((ELAPSED_SECONDS % 60))s"
-else
-    FORMATTED_TIME="${ELAPSED_SECONDS}s"
-fi
+FORMATTED_TIME="${ELAPSED_SECONDS}s"
 
 # LOGGING
 if [ $RSYNC_STATUS -eq 0 ]; then
@@ -191,24 +158,18 @@ if [ $RSYNC_STATUS -eq 0 ]; then
     echo "✨ Success! Transfer completed successfully. (Time: $FORMATTED_TIME)"
     echo "💾 Saved Location: $TARGET_USER@$TARGET_IP:$DEST_PATH"
     
-    if [ -d "$ABS_SRC_ROOT" ]; then
-        TRANSFER_FILES=$(find "$ABS_SRC_ROOT" -type f 2>/dev/null)
-    else
-        TRANSFER_FILES="$ABS_SRC_ROOT"
-    fi
+    TRANSFER_FILES=$(find "$SRC_PATH" -type f 2>/dev/null)
+    [ -z "$TRANSFER_FILES" ] && TRANSFER_FILES="$SRC_PATH"
 
     echo "$TRANSFER_FILES" | while read -r single_file; do
         [ -z "$single_file" ] && continue
-        single_file=$(echo "$single_file" | sed 's/\/\/*/\//g')
-
         echo "[$(date '+%H:%M:%S')] [SEND_SUCCESS] File: $single_file" >> "$LOG_FILE"
         echo "           └─ To: $TARGET_NAME($TARGET_IP) -> '$DEST_PATH' | Time: $FORMATTED_TIME" >> "$LOG_FILE"
     done
 else
     echo "------------------------------------------------------------"
     echo "❌ 보안 알림: 패스워드 3회 실패로 인해 접속이 강제 종료되었습니다."
-    
-    echo "[$(date '+%H:%M:%S')] [SEND_FAIL] File: $ABS_SRC_ROOT" >> "$LOG_FILE"
+    echo "[$(date '+%H:%M:%S')] [SEND_FAIL] File: $SRC_PATH" >> "$LOG_FILE"
     echo "           └─ To: $TARGET_NAME($TARGET_IP) -> '$DEST_PATH' | Time: $FORMATTED_TIME (SSH Error/3-Pass Limit)" >> "$LOG_FILE"
 fi
 
