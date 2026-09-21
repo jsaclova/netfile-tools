@@ -87,15 +87,23 @@ echo " 🔒 Strict Security Active: Auto-close session after 3 password failures
 echo " 💡 Type 'exit' inside the remote terminal to return to your Mac."
 echo "------------------------------------------------------------"
 
-# 6. SSH 연결 실행
+# 6. SSH 연결 실행 및 에러 출력 노이즈 제어
 # NumberOfPasswordPrompts=3 : 일반 패스워드 시도 제한 3회
 # KbdInteractiveAuthentication=no : 서버 측 커스텀 키보드 대화형 우회 프롬프트 원천 차단
 # PreferredAuthentications=password : 표준 패스워드 인증 방식을 최우선 강제 지정
 ssh -o NumberOfPasswordPrompts=3 \
     -o KbdInteractiveAuthentication=no \
     -o PreferredAuthentications=password \
-    "${TARGET_USER}@${TARGET_IP}"
+    "${TARGET_USER}@${TARGET_IP}" 2>/dev/null
+SSH_STATUS=$?
 
 echo "------------------------------------------------------------"
-echo " 🚪 SSH session with [$TARGET_NAME] closed. Returned to local Mac."
+
+# 7. 종료 상태에 따른 커스텀 피드백 제어
+if [ $SSH_STATUS -ne 0 ] && [ $SSH_STATUS -ne 130 ]; then
+    # 패스워드 실패(보통 255 반환) 등으로 비정상 종료된 경우 깔끔한 안내문 출력 (Ctrl+C인 130은 제외)
+    echo "❌ 보안 알림: 패스워드 3회 실패로 인해 접속이 강제 종료되었습니다."
+else
+    echo " 🚪 SSH session with [$TARGET_NAME] closed. Returned to local Mac."
+fi
 echo "============================================================"
