@@ -13,7 +13,7 @@ clear
 echo "============================================================"
 echo " ▶️ Program     : netssh"
 echo " ▶️ Author      : Jin (jsaclova@gmail.com)"
-echo " ▶️ Description : Interactive SSH Remote Login Tool"
+echo " ▶️ Description : Interactive SSH Remote Login Tool via Address Book"
 echo "============================================================"
 echo "  Select a target computer from your address book to connect."
 echo "============================================================"
