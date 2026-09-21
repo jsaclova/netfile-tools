@@ -51,6 +51,9 @@ done < "$LIST_FILE"
 
 TOTAL_TARGETS=$((index - 1))
 
+# [언제든지 종료할 수 있는 0번 옵션 인쇄]
+printf "   [0] Exit and Cancel (Return to local Mac terminal)\n"
+
 if [ "$TOTAL_TARGETS" -eq 0 ]; then
     echo "⚪️ Notice: No valid hosts found in target_list.txt."
     echo "============================================================"
@@ -58,23 +61,31 @@ if [ "$TOTAL_TARGETS" -eq 0 ]; then
 fi
 
 echo "------------------------------------------------------------"
-read -p "👉 Enter target number: " CHOICE
+read -p "👉 Enter target number (or '0' to quit): " CHOICE
 echo "------------------------------------------------------------"
 
-# 3. 선택 번호 유효성 검증
+# 3. 사용자 즉시 종료(Cancel) 옵션 처리 및 예외 필터링
+# 0을 누르거나, q, quit, exit 등을 입력하면 깨끗하게 종료합니다.
+if [ "$CHOICE" == "0" ] || [ "$CHOICE" == "q" ] || [ "$CHOICE" == "quit" ] || [ "$CHOICE" == "exit" ] || [ -z "$CHOICE" ]; then
+    echo " 🚪 Cancelled. Safely returned to local Mac terminal."
+    echo "============================================================"
+    exit 0
+fi
+
+# 4. 선택 번호 유효성 검증 (숫자 형식 체크)
 if ! [[ "$CHOICE" =~ ^[0-9]+$ ]] || [ "$CHOICE" -lt 1 ] || [ "$CHOICE" -gt "$TOTAL_TARGETS" ]; then
     echo "❌ Error: Invalid selection number."
     echo "============================================================"
     exit 1
 fi
 
-# 4. 선택한 기기의 데이터 파싱
+# 5. 선택한 기기의 데이터 파싱
 SELECTED_DATA="${lines[$((CHOICE - 1))]}"
 TARGET_NAME=$(echo "$SELECTED_DATA" | awk '{print $1}')
 TARGET_USER=$(echo "$SELECTED_DATA" | awk '{print $2}')
 TARGET_IP=$(echo "$SELECTED_DATA" | awk '{print $3}')
 
-# 5. 원격지 컴퓨터 Ping 연결 상태 사전 점검
+# 6. 원격지 컴퓨터 Ping 연결 상태 사전 점검
 echo " 🔍 Checking connection to [$TARGET_NAME] ($TARGET_IP)..."
 if ! ping -c 1 -W 2 "$TARGET_IP" &>/dev/null; then
     echo " ❌ Error: Cannot communicate with $TARGET_NAME. Host is offline."
@@ -87,10 +98,7 @@ echo " 🔒 Strict Security Active: Auto-close session after 3 password failures
 echo " 💡 Type 'exit' inside the remote terminal to return to your Mac."
 echo "------------------------------------------------------------"
 
-# 6. SSH 연결 실행 및 에러 출력 노이즈 제어
-# NumberOfPasswordPrompts=3 : 일반 패스워드 시도 제한 3회
-# KbdInteractiveAuthentication=no : 서버 측 커스텀 키보드 대화형 우회 프롬프트 원천 차단
-# PreferredAuthentications=password : 표준 패스워드 인증 방식을 최우선 강제 지정
+# 7. SSH 연결 실행
 ssh -o NumberOfPasswordPrompts=3 \
     -o KbdInteractiveAuthentication=no \
     -o PreferredAuthentications=password \
@@ -99,9 +107,8 @@ SSH_STATUS=$?
 
 echo "------------------------------------------------------------"
 
-# 7. 종료 상태에 따른 커스텀 피드백 제어
+# 8. 종료 상태에 따른 커스텀 피드백 제어
 if [ $SSH_STATUS -ne 0 ] && [ $SSH_STATUS -ne 130 ]; then
-    # 패스워드 실패(보통 255 반환) 등으로 비정상 종료된 경우 깔끔한 안내문 출력 (Ctrl+C인 130은 제외)
     echo "❌ 보안 알림: 패스워드 3회 실패로 인해 접속이 강제 종료되었습니다."
 else
     echo " 🚪 SSH session with [$TARGET_NAME] closed. Returned to local Mac."
