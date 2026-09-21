@@ -20,7 +20,9 @@ mkdir -p "$LOG_DIR" 2>/dev/null
 
 clear
 echo "============================================================"
-echo "      🚀 Interactive Remote File Transfer Tool (netsend)"
+echo " ▶️ Program     : netsend"
+echo " ▶️ Author      : Jin (jsaclova@gmail.com)"
+echo " ▶️ Description : Interactive Remote File/Folder Transfer Tool"
 echo "============================================================"
 echo "  This tool guides you step-by-step to send files or folders"
 echo "  to another computer on the same network using SSH/rsync."
