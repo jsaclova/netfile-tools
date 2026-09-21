@@ -3,7 +3,7 @@
 # Name: netsend
 # Author: Jin (jsaclova@gmail.com)
 # Date: 2026-09-21
-# Description: Interactive Remote File/Folder Transfer Tool with Strict 3-Pass Limit
+# Description: Interactive Remote File/Folder Transfer Tool with 1-Step Quit Option
 # ===============================================
 
 # 고정 설정 경로
@@ -29,17 +29,22 @@ echo "  to another computer on the same network using SSH/rsync."
 echo "============================================================"
 echo ""
 
-# STEP 1: 보낼 파일 또는 폴더 경로 입력받기
+# ------------------------------------------------------------
+# STEP 1: 보낼 파일 또는 폴더 경로 입력받기 (0번 취소 안내 추가)
+# ------------------------------------------------------------
 echo "📌 STEP 1: Enter the path of the file or folder to send."
 echo "   (You can drag and drop the file/folder into this terminal window)"
-read -p "👉 Path: " SRC_PATH
+read -p "👉 Path (or '0' to quit): " SRC_PATH
 
+# 드래그 앤 드롭 시 양끝에 붙는 따옴표나 공백 제거 가공
 SRC_PATH=$(echo "$SRC_PATH" | sed -e "s/^'//" -e "s/'$//" -e 's/^"//' -e 's/"$//' -e 's/[[:space:]]*$//')
 
-if [ -z "$SRC_PATH" ]; then
-    echo "❌ Error: Path cannot be empty. Canceling transfer."
+# [핵심 패치] 1단계 경로 입력창에서 0, q, quit, exit 입력 시 즉시 취소 종료
+if [ "$SRC_PATH" == "0" ] || [ "$SRC_PATH" == "q" ] || [ "$SRC_PATH" == "quit" ] || [ "$SRC_PATH" == "exit" ] || [ -z "$SRC_PATH" ]; then
+    echo "------------------------------------------------------------"
+    echo " 🚪 Cancelled at Step 1. Safely returned to Mac terminal."
     echo "============================================================"
-    exit 1
+    exit 0
 fi
 
 if [ ! -e "$SRC_PATH" ]; then
@@ -50,7 +55,9 @@ fi
 echo "🟢 Valid source path verified."
 echo ""
 
+# ------------------------------------------------------------
 # STEP 2: 주소록을 파싱하여 목적지 선택받기
+# ------------------------------------------------------------
 echo "📌 STEP 2: Select the destination computer from the list."
 if [ ! -f "$LIST_FILE" ]; then
     echo "❌ Error: Address book file ($LIST_FILE) not found."
@@ -80,8 +87,7 @@ done < "$LIST_FILE"
 
 TOTAL_TARGETS=$((index - 1))
 
-# [언제든지 종료할 수 있는 0번 옵션 인쇄]
-printf "   [0] Exit and Cancel (Return to local Mac terminal)\n"
+printf "   [%d] Exit and Cancel (Return to local Mac terminal)\n" "$index"
 
 if [ "$TOTAL_TARGETS" -eq 0 ]; then
     echo "⚪️ Notice: No valid hosts found in target_list.txt."
@@ -90,12 +96,12 @@ if [ "$TOTAL_TARGETS" -eq 0 ]; then
 fi
 
 echo "------------------------------------------------------------"
-read -p "👉 Enter number (1-$TOTAL_TARGETS or '0' to quit): " CHOICE
+read -p "👉 Enter number (1-$TOTAL_TARGETS or '$index'/'0' to quit): " CHOICE
 echo "------------------------------------------------------------"
 
-# 사용자 즉시 종료(Cancel) 옵션 처리
-if [ "$CHOICE" == "0" ] || [ "$CHOICE" == "q" ] || [ "$CHOICE" == "quit" ] || [ "$CHOICE" == "exit" ] || [ -z "$CHOICE" ]; then
-    echo " 🚪 Cancelled. Safely returned to local Mac terminal."
+# 2단계 종료 옵션 처리 (0번 또는 목록 끝번호 선택 시 종료)
+if [ "$CHOICE" == "0" ] || [ "$CHOICE" == "$index" ] || [ "$CHOICE" == "q" ] || [ "$CHOICE" == "quit" ] || [ "$CHOICE" == "exit" ]; then
+    echo " 🚪 Cancelled at Step 2. Safely returned to Mac terminal."
     echo "============================================================"
     exit 0
 fi
@@ -113,10 +119,19 @@ TARGET_IP=$(echo "$SELECTED_DATA" | awk '{print $3}')
 echo "🟢 Target selected: $TARGET_NAME"
 echo ""
 
-# STEP 3: 목적지 저장 위치(디렉토리 경로) 입력받기
+# ------------------------------------------------------------
+# STEP 3: 목적지 저장 위치 입력받기
+# ------------------------------------------------------------
 echo "📌 STEP 3: Enter the destination folder path on the remote machine."
 echo "   (Press [Enter] to use default fallback: ~/Downloads/)"
-read -p "👉 Remote Path: " DEST_PATH
+read -p "👉 Remote Path (or '0' to quit): " DEST_PATH
+
+if [ "$DEST_PATH" == "0" ] || [ "$DEST_PATH" == "q" ] || [ "$DEST_PATH" == "quit" ] || [ "$DEST_PATH" == "exit" ]; then
+    echo "------------------------------------------------------------"
+    echo " 🚪 Cancelled at Step 3. Safely returned to Mac terminal."
+    echo "============================================================"
+    exit 0
+fi
 
 if [ -z "$DEST_PATH" ]; then
     DEST_PATH="~/Downloads/"
@@ -154,12 +169,7 @@ echo " 🔒 Strict Security Active: Auto-close session after 3 password failures
 echo "------------------------------------------------------------"
 
 SSH_OPTS="ssh -o NumberOfPasswordPrompts=3 -o KbdInteractiveAuthentication=no -o PreferredAuthentications=password"
-
-if [ -d "$SRC_PATH" ]; then
-    RSYNC_ERR_LOG=$(rsync -avzh --progress -e "$SSH_OPTS" "${SRC_PATH%/}" "${TARGET_USER}@${TARGET_IP}:${DEST_PATH}" 2>&1)
-else
-    RSYNC_ERR_LOG=$(rsync -avzh --progress -e "$SSH_OPTS" "$SRC_PATH" "${TARGET_USER}@${TARGET_IP}:${DEST_PATH}" 2>&1)
-fi
+RSYNC_ERR_LOG=$(rsync -avzh --progress -e "$SSH_OPTS" "${SRC_PATH%/}" "${TARGET_USER}@${TARGET_IP}:${DEST_PATH}" 2>&1)
 RSYNC_STATUS=$?
 
 END_TIME=$(date +%s)
