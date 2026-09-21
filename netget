@@ -3,7 +3,7 @@
 # Name: netget
 # Author: Jin (jsaclova@gmail.com)
 # Date: 2026-09-21
-# Description: Interactive Remote File/Folder Pull Tool (rsync-based)
+# Description: Interactive Remote File/Folder Pull Tool with Strict 3-Pass Limit
 # ===============================================
 
 # 고정 설정 경로
@@ -20,7 +20,9 @@ mkdir -p "$LOG_DIR" 2>/dev/null
 
 clear
 echo "============================================================"
-echo "      📥 Interactive Remote File Pull Tool (netget)"
+echo " ▶️ Program     : netget"
+echo " ▶️ Author      : Jin (jsaclova@gmail.com)"
+echo " ▶️ Description : Interactive Remote File/Folder Pull Tool"
 echo "============================================================"
 echo "  This tool guides you step-by-step to GET files or folders"
 echo "  from another computer on the same network using SSH/rsync."
@@ -129,12 +131,14 @@ if ! ping -c 1 -W 2 "$TARGET_IP" &>/dev/null; then
 fi
 
 echo "🟢 Online! Initializing secure remote data pull..."
-echo "💡 Source computer password might be requested below."
+echo " 🔒 Strict Security Active: Auto-close session after 3 password failures."
 echo "------------------------------------------------------------"
 
 TARGET_BASE_NAME=$(basename "$REMOTE_SRC_PATH")
 
-rsync -avzh --progress "${TARGET_USER}@${TARGET_IP}:${REMOTE_SRC_PATH}" "$LOCAL_DEST_PATH"
+# [보안 제어 및 노이즈 필터링] 무결점 3회 패스워드 강제 차단 옵션을 주입하고, 에러 로그를 격리 변수에 담습니다.
+SSH_OPTS="ssh -o NumberOfPasswordPrompts=3 -o KbdInteractiveAuthentication=no -o PreferredAuthentications=password"
+RSYNC_ERR_LOG=$(rsync -avzh --progress -e "$SSH_OPTS" "${TARGET_USER}@${TARGET_IP}:${REMOTE_SRC_PATH}" "$LOCAL_DEST_PATH" 2>&1)
 RSYNC_STATUS=$?
 
 END_TIME=$(date +%s)
@@ -149,8 +153,10 @@ else
     FORMATTED_TIME="${ELAPSED_SECONDS}s"
 fi
 
-# LOGGING LOGIC
+# LOGGING 및 결과 화면 제어
 if [ $RSYNC_STATUS -eq 0 ]; then
+    # 성공 시 격리했던 다운로드 진행 목록을 화면에 표출
+    echo "$RSYNC_ERR_LOG"
     echo "------------------------------------------------------------"
     echo "✨ Success! Download completed successfully. (Time: $FORMATTED_TIME)"
     
@@ -179,10 +185,11 @@ if [ $RSYNC_STATUS -eq 0 ]; then
     done
 else
     echo "------------------------------------------------------------"
-    echo "❌ Download Failed: SSH connection closed, auth error, or wrong path."
+    # rsync 소켓 깨짐 에러 구문을 완전히 파괴하고 깔끔한 안내 문구만 매핑 출력
+    echo "❌ 보안 알림: 패스워드 3회 실패로 인해 접속이 강제 종료되었습니다."
     
     echo "[$(date '+%H:%M:%S')] [GET_FAIL] Remote: $TARGET_NAME($TARGET_IP) -> Path: $REMOTE_SRC_PATH" >> "$LOG_FILE"
-    echo "           └─ Local Save: $LOCAL_DEST_PATH | Time: $FORMATTED_TIME (SSH/Path Error)" >> "$LOG_FILE"
+    echo "           └─ Local Save: $LOCAL_DEST_PATH | Time: $FORMATTED_TIME (SSH Error/3-Pass Limit)" >> "$LOG_FILE"
 fi
 
 echo "============================================================"
