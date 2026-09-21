@@ -11,7 +11,9 @@ LIST_FILE="$HOME/bin/netfile-tools/target_list.txt"
 
 clear
 echo "============================================================"
-echo "          🔑 Interactive SSH Remote Login Tool (netssh)"
+echo " ▶️ Program     : netssh"
+echo " ▶️ Author      : Jin (jsaclova@gmail.com)"
+echo " ▶️ Description : Interactive SSH Remote Login Tool"
 echo "============================================================"
 echo "  Select a target computer from your address book to connect."
 echo "============================================================"
@@ -81,11 +83,12 @@ if ! ping -c 1 -W 2 "$TARGET_IP" &>/dev/null; then
 fi
 
 echo " 🟢 Connected! Launching SSH session..."
+echo " 🔒 Security Active: Session will auto-close after 3 password failures."
 echo " 💡 Type 'exit' inside the remote terminal to return to your Mac."
 echo "------------------------------------------------------------"
 
-# 6. SSH 연결 직접 실행
-ssh "${TARGET_USER}@${TARGET_IP}"
+# 6. SSH 연결 실행 (패스워드 입력 프롬프트 시도 횟수를 딱 3회로 제한)
+ssh -o NumberOfPasswordPrompts=3 "${TARGET_USER}@${TARGET_IP}"
 
 echo "------------------------------------------------------------"
 echo " 🚪 SSH session with [$TARGET_NAME] closed. Returned to local Mac."
