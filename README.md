@@ -6,10 +6,24 @@
 
 ## 🚀 원클릭 초고속 자동 설치 가이드 (Installation)
 
-새로운 PC나 포맷한 맥 터미널에서 **아래 한 줄만 복사해서 실행**하면 깃허브 저장소(`jsaclova/netfile-tools`)로부터 단독 패키지를 안전하게 전송받아 터미널 환경 변수와 단축키(`fileman`) 매핑까지 5초 만에 완료합니다.
+사용자의 환경이나 PC 상태에 따라 **자동 설치** 또는 **수동 설치** 방식을 선택하여 환경을 구축할 수 있습니다.
+
+### 💡 방법 A. 원클릭 자동 설치 (추천)
+새로운 PC나 포맷한 맥 터미널에서 **아래 한 줄만 복사해서 실행**하면 내 깃허브 저장소(`jsaclova/netfile-tools`)로부터 단독 패키지를 안전하게 전송받아 터미널 환경 변수와 단축키(`fileman`) 매핑까지 5초 만에 완료합니다.
 
 ```bash
 curl -sSL https://githubusercontent.com -o /tmp/netfile_install && chmod +x /tmp/netfile_install && /tmp/netfile_install && rm -f /tmp/netfile_install
+```
+
+### 🛠️ 방법 B. 최초 Git Clone 수동 설치 (정석)
+원격 저장소에서 소스코드를 직접 내려받아 수동으로 환경을 빌드하는 절차입니다.
+
+```bash
+mkdir -p ~/bin && cd ~/bin
+git clone git@github.com:jsaclova/netfile-tools.git
+echo 'export PATH="$HOME/bin/netfile-tools:$PATH"' >> ~/.zshrc
+echo "alias fileman='cat ~/bin/netfile-tools/manual | less -R'" >> ~/.zshrc
+chmod +x ~/bin/netfile-tools/*
 ```
 
 > ⚠️ **설치 후 필수 완료 명령어**: 무결점 작동을 위해 설치가 끝나면 아래 명령어를 한 번 치거나 터미널 창을 새로 열어주세요.
