@@ -1,0 +1,92 @@
+#!/bin/bash
+
+# 고정 설정 경로
+TOOL_DIR="\$HOME/bin/netfile-tools"
+LIST_FILE="\$TOOL_DIR/target_list.txt"
+
+clear
+echo "============================================================"
+echo "          🔑 Interactive SSH Remote Login Tool (netssh)"
+echo "============================================================"
+echo "  Select a target computer from your address book to connect."
+echo "============================================================"
+echo ""
+
+# 1. 주소록 파일 존재 여부 검증
+if [ ! -f "\$LIST_FILE" ]; then
+    echo "❌ Error: Target list file not found: \$LIST_FILE"
+    echo "============================================================"
+    exit 1
+fi
+
+# 2. 주소록 파싱 및 대화형 메뉴 출력
+echo " 📋 Select a destination computer to SSH into:"
+echo "------------------------------------------------------------"
+
+lines=()
+index=1
+while IFS= read -r line; do
+    # 주석 및 빈 줄 건너뛰기
+    [[ "\$line" =~ ^[[:space:]]*# ]] && continue
+    [[ -z "\$line" ]] && continue
+    
+    # 컬럼 파싱
+    raw_name=\((echo "\)line" | awk '{print \$1}')
+    raw_user=\((echo "\)line" | awk '{print \$2}')
+    raw_ip=\((echo "\)line" | awk '{print \$3}')
+    
+    # 'User:' 및 'IP:' 태그 제거 가공
+    clean_user=\${raw_user#User:}
+    clean_ip=\${raw_ip#IP:}
+    
+    # 메뉴 출력 (Host3 이름 중복을 방지하기 위해 인덱스 번호를 기준으로 처리)
+    printf "   [%d] %-8s (User: %-8s / IP: %s)\n" "\(index" "\)raw_name" "\(clean_user" "\)clean_ip"
+    
+    # 배열에 정제된 데이터 임시 저장
+    lines+=("\$raw_name \(clean_user\)clean_ip")
+    index=\$((index + 1))
+done < "\$LIST_FILE"
+
+TOTAL_TARGETS=\$((index - 1))
+
+if [ "\$TOTAL_TARGETS" -eq 0 ]; then
+    echo "⚪️ Notice: No valid hosts found in target_list.txt."
+    echo "============================================================"
+    exit 1
+fi
+
+echo "------------------------------------------------------------"
+read -p "👉 Enter target number: " CHOICE
+echo "------------------------------------------------------------"
+
+# 3. 선택 번호 유효성 검증
+if ! [[ "\$CHOICE" =~ ^[0-9]+\( ]] \vert{}\vert{} [ "\)CHOICE" -lt 1 ] || [ "\(CHOICE" -gt "\)TOTAL_TARGETS" ]; then
+    echo "❌ Error: Invalid selection number."
+    echo "============================================================"
+    exit 1
+fi
+
+# 4. 선택한 기기의 데이터 파싱
+SELECTED_DATA="\({lines[\)((CHOICE - 1))]}"
+TARGET_NAME=\((echo "\)SELECTED_DATA" | awk '{print \$1}')
+TARGET_USER=\((echo "\)SELECTED_DATA" | awk '{print \$2}')
+TARGET_IP=\((echo "\)SELECTED_DATA" | awk '{print \$3}')
+
+# 5. 원격지 컴퓨터 Ping 연결 상태 사전 점검
+echo " 🔍 Checking connection to [\(TARGET_NAME] (\)TARGET_IP)..."
+if ! ping -c 1 -W 2 "\$TARGET_IP" &>/dev/null; then
+    echo " ❌ Error: Cannot communicate with \$TARGET_NAME. Host is offline."
+    echo "============================================================"
+    exit 1
+fi
+
+echo " 🟢 Connected! Launching SSH session..."
+echo " 💡 Type 'exit' inside the remote terminal to return to your Mac."
+echo "------------------------------------------------------------"
+
+# 6. SSH 연결 직접 실행
+ssh "\({TARGET_USER}@\){TARGET_IP}"
+
+echo "------------------------------------------------------------"
+echo " 🚪 SSH session with [\$TARGET_NAME] closed. Returned to local Mac."
+echo "============================================================"
