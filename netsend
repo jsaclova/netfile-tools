@@ -2,8 +2,8 @@
 # ===============================================
 # Name: netsend
 # Author: Jin (jsaclova@gmail.com)
-# Date: 2026-09-21
-# Description: Interactive Remote File/Folder Transfer Tool with Fixed 0-Quit
+# Date: 2026-09-22
+# Description: Interactive Remote File/Folder Transfer Tool with Real-time Progress
 # ===============================================
 
 # 고정 설정 경로
@@ -29,9 +29,7 @@ echo "  to another computer on the same network using SSH/rsync."
 echo "============================================================"
 echo ""
 
-# ------------------------------------------------------------
 # STEP 1: 보낼 파일 또는 폴더 경로 입력받기
-# ------------------------------------------------------------
 echo "📌 STEP 1: Enter the path of the file or folder to send."
 echo "   (You can drag and drop the file/folder into this terminal window)"
 read -p "👉 Path (or '0' to quit): " SRC_PATH
@@ -54,9 +52,7 @@ fi
 echo "🟢 Valid source path verified."
 echo ""
 
-# ------------------------------------------------------------
-# STEP 2: 주소록을 파싱하여 목적지 선택받기 (0번 고정 패치)
-# ------------------------------------------------------------
+# STEP 2: 주소록을 파싱하여 목적지 선택받기
 echo "📌 STEP 2: Select the destination computer from the list."
 if [ ! -f "$LIST_FILE" ]; then
     echo "❌ Error: Address book file ($LIST_FILE) not found."
@@ -86,8 +82,8 @@ done < "$LIST_FILE"
 
 TOTAL_TARGETS=$((index - 1))
 
-# [핵심 고정] 명단 규모와 관계없이 취소 메뉴 번호를 무조건 '0'번으로 물리 고정 인쇄
-printf "   [0] Exit and Cancel (Return to local Mac terminal)\n"
+# 취소 메뉴 번호를 무조건 '0'번으로 물리 고정 인쇄
+printf "   Exit and Cancel (Return to local Mac terminal)\n"
 
 if [ "$TOTAL_TARGETS" -eq 0 ]; then
     echo "⚪️ Notice: No valid hosts found in target_list.txt."
@@ -119,9 +115,7 @@ TARGET_IP=$(echo "$SELECTED_DATA" | awk '{print $3}')
 echo "🟢 Target selected: $TARGET_NAME"
 echo ""
 
-# ------------------------------------------------------------
 # STEP 3: 목적지 저장 위치 입력받기
-# ------------------------------------------------------------
 echo "📌 STEP 3: Enter the destination folder path on the remote machine."
 echo "   (Press [Enter] to use default fallback: ~/Downloads/)"
 read -p "👉 Remote Path (or '0' to quit): " DEST_PATH
@@ -141,19 +135,46 @@ echo ""
 
 # START TRANSFER
 START_TIME=$(date +%s)
+
+echo "🔍 Checking connection to [$TARGET_NAME] ($TARGET_IP)..."
+if ! ping -c 1 -W 2 "$TARGET_IP" &>/dev/null; then
+    echo "❌ Error: Cannot communicate with $TARGET_NAME. Host is offline."
+    END_TIME=$(date +%s)
+    ELAPSED=$((END_TIME - START_TIME))
+    
+    echo "[$(date '+%H:%M:%S')] [SEND_FAIL] File: $SRC_PATH" >> "$LOG_FILE"
+    echo "           └─ To: $TARGET_NAME($TARGET_IP) -> '$DEST_PATH' | Time: ${ELAPSED}s (Offline)" >> "$LOG_FILE"
+    echo "============================================================"
+    exit 1
+fi
+
+echo "🟢 Online! Initializing secure file transfer..."
+echo " 🔒 Strict Security Active: Auto-close session after 3 password failures."
+echo "------------------------------------------------------------"
+
 SSH_OPTS="ssh -o NumberOfPasswordPrompts=3 -o KbdInteractiveAuthentication=no -o PreferredAuthentications=password"
 
-# 상세 에러 로그 마스킹 격리 처리 전송
-RSYNC_ERR_LOG=$(rsync -avzh --progress -e "$SSH_OPTS" "${SRC_PATH%/}" "${TARGET_USER}@${TARGET_IP}:${DEST_PATH}" 2>&1)
+# [진행상황 로직 추가] 
+# rsync 출력에서 실시간 진행률, 전송 속도, 남은 시간 데이터를 실시간으로 파싱 및 출력합니다.
+# 정상 전송 시에는 stdout으로 출력을 실시간 스트리밍하고, 인증 실패 시 에러 멘트를 출력하기 위해 파이프라인 처리를 고도화했습니다.
+export TOTAL_TARGETS TOOL_DIR LIST_FILE LOG_DIR CURRENT_DATE LOG_FILE SRC_PATH DEST_PATH START_TIME SSH_OPTS TARGET_NAME TARGET_USER TARGET_IP
+
+TMP_OUT=$(mktemp)
+TMP_ERR=$(mktemp)
+
+if [ -d "$SRC_PATH" ]; then
+    rsync -avzh --progress -e "$SSH_OPTS" "${SRC_PATH%/}" "${TARGET_USER}@${TARGET_IP}:${DEST_PATH}" > >(tee "$TMP_OUT") 2> "$TMP_ERR"
+else
+    rsync -avzh --progress -e "$SSH_OPTS" "$SRC_PATH" "${TARGET_USER}@${TARGET_IP}:${DEST_PATH}" > >(tee "$TMP_OUT") 2> "$TMP_ERR"
+fi
 RSYNC_STATUS=$?
 
 END_TIME=$(date +%s)
 ELAPSED_SECONDS=$((END_TIME - START_TIME))
 FORMATTED_TIME="${ELAPSED_SECONDS}s"
 
-# LOGGING
+# LOGGING 및 화면 출력 제어
 if [ $RSYNC_STATUS -eq 0 ]; then
-    echo "$RSYNC_ERR_LOG"
     echo "------------------------------------------------------------"
     echo "✨ Success! Transfer completed successfully. (Time: $FORMATTED_TIME)"
     echo "💾 Saved Location: $TARGET_USER@$TARGET_IP:$DEST_PATH"
@@ -168,9 +189,17 @@ if [ $RSYNC_STATUS -eq 0 ]; then
     done
 else
     echo "------------------------------------------------------------"
-    echo "❌ 보안 알림: 패스워드 3회 실패로 인해 접속이 강제 종료되었습니다."
+    # 인증 실패 및 3회 제한 걸렸을 때만 에러 깔끔하게 필터링 후 출력
+    if grep -qE "Permission denied|Connection closed" "$TMP_ERR" "$TMP_OUT" 2>/dev/null; then
+        echo "❌ 보안 알림: 패스워드 3회 실패로 인해 접속이 강제 종료되었습니다."
+    else
+        # 일반 rsync 실패 사유 출력
+        cat "$TMP_ERR" 2>/dev/null
+        echo "❌ Transfer Failed: Something went wrong during rsync execution."
+    fi
     echo "[$(date '+%H:%M:%S')] [SEND_FAIL] File: $SRC_PATH" >> "$LOG_FILE"
     echo "           └─ To: $TARGET_NAME($TARGET_IP) -> '$DEST_PATH' | Time: $FORMATTED_TIME (SSH Error/3-Pass Limit)" >> "$LOG_FILE"
 fi
 
+rm -f "$TMP_OUT" "$TMP_ERR"
 echo "============================================================"
