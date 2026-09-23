@@ -2,8 +2,8 @@
 # ===============================================
 # Name: netget
 # Author: Jin (jsaclova@gmail.com)
-# Date: 2026-09-21
-# Description: Interactive Remote File/Folder Pull Tool with Fixed 0-Quit
+# Date: 2026-09-23
+# Description: Interactive Remote File/Folder Pull Tool with Real-time Progress
 # ===============================================
 
 # 고정 설정 경로
@@ -29,9 +29,7 @@ echo "  from another computer on the same network using SSH/rsync."
 echo "============================================================"
 echo ""
 
-# ------------------------------------------------------------
-# STEP 1: 주소록을 파싱하여 원격 기기 선택받기 (0번 고정 패치)
-# ------------------------------------------------------------
+# STEP 1: 주소록을 파싱하여 원격 기기 선택받기
 echo "📌 STEP 1: Select the source computer from the list."
 if [ ! -f "$LIST_FILE" ]; then
     echo "❌ Error: Address book file ($LIST_FILE) not found."
@@ -61,7 +59,7 @@ done < "$LIST_FILE"
 
 TOTAL_TARGETS=$((index - 1))
 
-# [핵심 고정] 주소록 개수와 상관없이 종료 메뉴 번호를 무조건 '0'번으로 상시 고정 인쇄
+# 취소 메뉴 번호를 무조건 '0'번으로 물리 고정 인쇄
 printf "   Exit and Cancel (Return to local Mac terminal)\n"
 
 if [ "$TOTAL_TARGETS" -eq 0 ]; then
@@ -74,7 +72,6 @@ echo "------------------------------------------------------------"
 read -p "👉 Enter number (1-$TOTAL_TARGETS or '0' to quit): " CHOICE
 echo "------------------------------------------------------------"
 
-# 0번 혹은 탈출 텍스트 입력 시 즉시 안전 종료
 if [ "$CHOICE" == "0" ] || [ "$CHOICE" == "q" ] || [ "$CHOICE" == "quit" ] || [ "$CHOICE" == "exit" ] || [ -z "$CHOICE" ]; then
     echo " 🚪 Cancelled at Step 1. Safely returned to Mac terminal."
     echo "============================================================"
@@ -94,9 +91,7 @@ TARGET_IP=$(echo "$SELECTED_DATA" | awk '{print $3}')
 echo "🟢 Source selected: $TARGET_NAME"
 echo ""
 
-# ------------------------------------------------------------
 # STEP 2: 상대방 컴퓨터의 가져올 파일/폴더 경로 입력받기
-# ------------------------------------------------------------
 echo "📌 STEP 2: Enter the remote path of the file or folder to GET."
 read -p "👉 Remote Path (or '0' to quit): " REMOTE_SRC_PATH
 
@@ -115,9 +110,7 @@ fi
 echo "🟢 Remote target path locked."
 echo ""
 
-# ------------------------------------------------------------
 # STEP 3: 내 컴퓨터의 저장 위치 지정받기
-# ------------------------------------------------------------
 echo "📌 STEP 3: Enter the local path to save the file/folder."
 echo "   (Press [Enter] to use default fallback: ~/Downloads)"
 read -p "👉 Local Path (or '0' to quit): " LOCAL_DEST_PATH
@@ -137,19 +130,41 @@ LOCAL_DEST_PATH=$(echo "$LOCAL_DEST_PATH" | sed -e "s/^'//" -e "s/'$//" -e 's/^"
 
 # START DOWNLOAD
 START_TIME=$(date +%s)
+
+echo "🔍 Checking connection to [$TARGET_NAME] ($TARGET_IP)..."
+if ! ping -c 1 -W 2 "$TARGET_IP" &>/dev/null; then
+    echo "❌ Error: Cannot communicate with $TARGET_NAME. Host is offline."
+    END_TIME=$(date +%s)
+    ELAPSED=$((END_TIME - START_TIME))
+    
+    echo "[$(date '+%H:%M:%S')] [GET_FAIL] Remote: $TARGET_NAME($TARGET_IP) -> Path: $REMOTE_SRC_PATH" >> "$LOG_FILE"
+    echo "           └─ Local Save: $LOCAL_DEST_PATH | Time: ${ELAPSED}s (Offline)" >> "$LOG_FILE"
+    echo "============================================================"
+    exit 1
+fi
+
+echo "🟢 Online! Initializing secure remote data pull..."
+echo " 🔒 Strict Security Active: Auto-close session after 3 password failures."
+echo "------------------------------------------------------------"
+
 SSH_OPTS="ssh -o NumberOfPasswordPrompts=3 -o KbdInteractiveAuthentication=no -o PreferredAuthentications=password"
 
-# 상세 에러 로그 마스킹 격리 처리 수신
-RSYNC_ERR_LOG=$(rsync -avzh --progress -e "$SSH_OPTS" "${TARGET_USER}@${TARGET_IP}:${REMOTE_SRC_PATH}" "$LOCAL_DEST_PATH" 2>&1)
+# [진행상황 로직 추가] 
+# rsync 실시간 스트리밍 버퍼 출력을 확보하고 가리기 명세를 리팩토링합니다.
+export TOTAL_TARGETS TOOL_DIR LIST_FILE LOG_DIR CURRENT_DATE LOG_FILE REMOTE_SRC_PATH LOCAL_DEST_PATH START_TIME SSH_OPTS TARGET_NAME TARGET_USER TARGET_IP
+
+TMP_OUT=$(mktemp)
+TMP_ERR=$(mktemp)
+
+rsync -avzh --progress -e "$SSH_OPTS" "${TARGET_USER}@${TARGET_IP}:${REMOTE_SRC_PATH}" "$LOCAL_DEST_PATH" > >(tee "$TMP_OUT") 2> "$TMP_ERR"
 RSYNC_STATUS=$?
 
 END_TIME=$(date +%s)
 ELAPSED_SECONDS=$((END_TIME - START_TIME))
 FORMATTED_TIME="${ELAPSED_SECONDS}s"
 
-# LOGGING
+# LOGGING 및 결과 화면 제어
 if [ $RSYNC_STATUS -eq 0 ]; then
-    echo "$RSYNC_ERR_LOG"
     echo "------------------------------------------------------------"
     echo "✨ Success! Download completed successfully. (Time: $FORMATTED_TIME)"
     
@@ -173,8 +188,15 @@ if [ $RSYNC_STATUS -eq 0 ]; then
     done
 else
     echo "------------------------------------------------------------"
-    echo "❌ 보안 알림: 패스워드 3회 실패로 인해 접속이 강제 종료되었습니다."
+    if grep -qE "Permission denied|Connection closed" "$TMP_ERR" "$TMP_OUT" 2>/dev/null; then
+        echo "❌ 보안 알림: 패스워드 3회 실패로 인해 접속이 강제 종료되었습니다."
+    else
+        cat "$TMP_ERR" 2>/dev/null
+        echo "❌ Download Failed: Something went wrong during rsync execution."
+    fi
     echo "[$(date '+%H:%M:%S')] [GET_FAIL] Remote: $TARGET_NAME($TARGET_IP) -> Path: $REMOTE_SRC_PATH" >> "$LOG_FILE"
     echo "           └─ Local Save: $LOCAL_DEST_PATH | Time: $FORMATTED_TIME (SSH Error/3-Pass Limit)" >> "$LOG_FILE"
 fi
+
+rm -f "$TMP_OUT" "$TMP_ERR"
 echo "============================================================"
